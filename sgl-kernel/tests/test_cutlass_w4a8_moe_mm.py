@@ -3,7 +3,12 @@ import torch
 from sgl_kernel import cutlass_w4a8_moe_mm, sgl_per_tensor_quant_fp8
 from utils import is_hopper
 
-from sglang.srt.layers.quantization.fp8_kernel import sglang_per_token_group_quant_fp8
+from sglang.srt.layers.moe.ep_moe.kernels import deepep_ll_get_cutlass_w4a8_moe_mm_data
+from sglang.srt.layers.quantization.fp8_kernel import (
+    interleave_int4,
+    sglang_per_token_group_quant_8bit,
+    sglang_per_token_group_quant_fp8,
+)
 
 
 def pack_int4_values_to_int8(int4_values_interleaved: torch.Tensor) -> torch.Tensor:
@@ -82,7 +87,10 @@ def test_int4_fp8_grouped_gemm_single_expert(batch_size):
         )
 
     w, w_scale = pack_interleave(num_experts, ref_w, ref_w_scale)
+    w_interleaved = torch.empty_like(w)
+    interleave_int4(w, w_interleaved, num_experts * n, k)
 
+    a = torch.zeros((num_experts, m, k), dtype=dtype, device=device)
     # Create expert offsets and problem sizes
     expert_offsets = torch.tensor([0, m], dtype=torch.int32, device=device)
     problem_sizes = torch.tensor([[n, m, k]], dtype=torch.int32, device=device)
@@ -116,7 +124,7 @@ def test_int4_fp8_grouped_gemm_single_expert(batch_size):
     cutlass_w4a8_moe_mm(
         c,
         a_q,
-        w,
+        w_interleaved,
         a_scale_padded,
         w_scale,
         expert_offsets[:-1],
@@ -211,6 +219,8 @@ def test_int4_fp8_grouped_gemm_multi_experts(batch_size, k, n, num_experts):
         )
 
     w, w_scale = pack_interleave(num_experts, ref_w, ref_w_scale)
+    w_interleaved = torch.empty_like(w)
+    interleave_int4(w, w_interleaved, num_experts * n, k)
 
     # random select experts
     experts_selection_result = torch.randint(
@@ -266,7 +276,7 @@ def test_int4_fp8_grouped_gemm_multi_experts(batch_size, k, n, num_experts):
     cutlass_w4a8_moe_mm(
         c_perm,
         a_q_perm,
-        w,
+        w_interleaved,
         a_scale_perm,
         w_scale,
         expert_offsets,
