@@ -158,6 +158,10 @@ def cutlass_w4a8_moe(
         num_local_experts,
         n,
         k,
+<<<<<<< HEAD
+=======
+        swap_mn=True,
+>>>>>>> de07f5232 (swap_mn compute somme offset)
     )
 
     c1 = torch.empty((m * topk, n * 2), device=device, dtype=torch.bfloat16)
